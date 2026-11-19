@@ -1,5 +1,3 @@
-
-
 package ayandaprog;
 
 public class java {

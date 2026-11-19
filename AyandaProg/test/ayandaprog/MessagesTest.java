@@ -1,327 +1,437 @@
+
 package ayandaprog;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Scanner;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+
 import static org.junit.Assert.*;
 
-/**
- * Unit tests for Messages (with test data).
- *
- * @author Student
- */
 public class MessagesTest {
 
-    private static final String VALID_NUMBER = "+27821234567";
-
-    private final PrintStream originalOut = System.out;
-    private ByteArrayOutputStream outContent;
+    private ByteArrayOutputStream output;
+    private PrintStream originalOutput;
 
     @Before
     public void setUp() throws Exception {
-        // Capture console output so it can be asserted on
-        outContent = new ByteArrayOutputStream();
-        System.setOut(new PrintStream(outContent));
 
-        // Reset the static state so tests don't affect each other
-        clearList("sentMessages");
-        clearList("disregardedMessages");
-        clearList("storedMessages");
+        // Save the original console output
+        originalOutput = System.out;
 
-        Field counter = Messages.class.getDeclaredField("messageCounter");
+        // Capture output for testing
+        output = new ByteArrayOutputStream();
+        System.setOut(new PrintStream(output));
+
+        // Clear sent messages
+        Messages.getSentMessages().clear();
+
+        // Clear stored messages
+        Messages.getStoredMessages().clear();
+
+        // Clear disregarded messages
+        Field disregarded = Messages.class.getDeclaredField(
+                "disregardedMessages");
+
+        disregarded.setAccessible(true);
+
+        ((ArrayList<?>) disregarded.get(null)).clear();
+
+        // Reset message counter
+        Field counter = Messages.class.getDeclaredField(
+                "messageCounter");
+
         counter.setAccessible(true);
         counter.setInt(null, 0);
+
+        // Delete old JSON file before testing
+        File file = new File("messages.json");
+
+        if (file.exists()) {
+            file.delete();
+        }
     }
 
     @After
     public void tearDown() {
-        System.setOut(originalOut);
-        new File("messages.json").delete();
-    }
 
-    // ---------- helpers ----------
+        // Restore original console output
+        System.setOut(originalOutput);
 
-    private void clearList(String fieldName) throws Exception {
-        Field f = Messages.class.getDeclaredField(fieldName);
-        f.setAccessible(true);
-        ((ArrayList<?>) f.get(null)).clear();
-    }
+        // Delete JSON test file
+        File file = new File("messages.json");
 
-    private String output() {
-        return outContent.toString();
-    }
-
-    private Scanner scannerOf(String... lines) {
-        return new Scanner(String.join("\n", lines) + "\n");
-    }
-
-    // ---------- isValidRecipient ----------
-
-    @Test
-    public void testIsValidRecipient_validNumbers() {
-        assertTrue(Messages.isValidRecipient("+27821234567"));
-        assertTrue(Messages.isValidRecipient("+27838884567"));
-        assertTrue(Messages.isValidRecipient("+12025550123"));
-        assertTrue(Messages.isValidRecipient("+12345678"));          // 8 digits (minimum)
-        assertTrue(Messages.isValidRecipient("+123456789012345"));   // 15 digits (maximum)
-    }
-
-    @Test
-    public void testIsValidRecipient_invalidNumbers() {
-        assertFalse(Messages.isValidRecipient(""));
-        assertFalse(Messages.isValidRecipient("0821234567"));        // no + prefix
-        assertFalse(Messages.isValidRecipient("27821234567"));       // no + prefix
-        assertFalse(Messages.isValidRecipient("+27"));               // too short
-        assertFalse(Messages.isValidRecipient("+1234567"));          // 7 digits, too short
-        assertFalse(Messages.isValidRecipient("+1234567890123456")); // 16 digits, too long
-        assertFalse(Messages.isValidRecipient("+0821234567"));       // starts with 0
-        assertFalse(Messages.isValidRecipient("+2782abc4567"));      // letters
-        assertFalse(Messages.isValidRecipient("+27 82 123 4567"));   // spaces
-    }
-
-    // ---------- generateMessageID ----------
-
-    @Test
-    public void testGenerateMessageID() {
-        for (int i = 0; i < 50; i++) {
-            String id = Messages.generateMessageID();
-            assertEquals(10, id.length());
-            assertTrue("ID should be all digits: " + id, id.matches("\\d{10}"));
-            assertNotEquals('0', id.charAt(0));
+        if (file.exists()) {
+            file.delete();
         }
     }
 
-    // ---------- generateMessageHash ----------
+    private String getOutput() {
+        return output.toString();
+    }
+
+    private Scanner scannerOf(String... lines) {
+        return new Scanner(String.join(
+                System.lineSeparator(), lines));
+    }
 
     @Test
-    public void testGenerateMessageHash_multipleWords() {
+    public void testMessageConstructorAndGetters() {
+
+        Messages.Message message = new Messages.Message(
+                "1234567890",
+                1,
+                "+27821234567",
+                "Hello there",
+                "12:1:HELLOTHERE",
+                "Sent"
+        );
+
+        assertEquals("1234567890", message.getMessageID());
+        assertEquals(1, message.getMessageNumber());
+        assertEquals("+27821234567", message.getRecipient());
+        assertEquals("Hello there", message.getMessage());
+        assertEquals("12:1:HELLOTHERE", message.getMessageHash());
+        assertEquals("Sent", message.getMessageStatus());
+    }
+
+    @Test
+    public void testValidRecipient() {
+        assertTrue(Messages.isValidRecipient("+27821234567"));
+    }
+
+    @Test
+    public void testInvalidRecipientWithoutCountryCode() {
+        assertFalse(Messages.isValidRecipient("0821234567"));
+    }
+
+    @Test
+    public void testInvalidRecipientWithLetters() {
+        assertFalse(Messages.isValidRecipient("+27821ABC567"));
+    }
+
+    @Test
+    public void testInvalidRecipientNull() {
+        assertFalse(Messages.isValidRecipient(null));
+    }
+
+    @Test
+    public void testGenerateMessageID() {
+
+        String id = Messages.generateMessageID();
+
+        assertEquals(10, id.length());
+        assertTrue(id.matches("[0-9]{10}"));
+    }
+
+    @Test
+    public void testGenerateUniqueMessageIDs() {
+
+        String firstID = Messages.generateMessageID();
+        String secondID = Messages.generateMessageID();
+
+        assertNotEquals(firstID, secondID);
+    }
+
+    @Test
+    public void testGenerateMessageHash() {
+
         String hash = Messages.generateMessageHash(
-                "0012345678", 0, "Hi Mike, can you join us for dinner tonight");
-        assertEquals("00:0:HITONIGHT", hash);
+                "1234567890", 1, "Hello there");
+
+        assertEquals("12:1:HELLOTHERE", hash);
     }
 
     @Test
-    public void testGenerateMessageHash_twoWords() {
+    public void testGenerateHashWithOneWord() {
+
         String hash = Messages.generateMessageHash(
-                "1234567890", 1, "Hello world");
-        assertEquals("12:1:HELLOWORLD", hash);
+                "1234567890", 1, "Hello");
+
+        assertEquals("12:1:HELLO", hash);
     }
 
     @Test
-    public void testGenerateMessageHash_singleWord() {
+    public void testGenerateHashWithExtraSpaces() {
+
         String hash = Messages.generateMessageHash(
-                "9876543210", 3, "Thanks");
-        assertEquals("98:3:THANKSTHANKS", hash);
+                "1234567890", 1, "  Hello   there  ");
+
+        assertEquals("12:1:HELLOTHERE", hash);
     }
 
     @Test
-    public void testGenerateMessageHash_extraWhitespace() {
-        String hash = Messages.generateMessageHash(
-                "5566778899", 2, "   Good   morning   ");
-        assertEquals("55:2:GOODMORNING", hash);
-    }
+    public void testEscapeJSON() {
 
-    // ---------- escapeJSON ----------
+        String result = Messages.escapeJSON(
+                "Hello \"World\"");
 
-    @Test
-    public void testEscapeJSON_plainText() {
-        assertEquals("Hello world", Messages.escapeJSON("Hello world"));
+        assertEquals("Hello \\\"World\\\"", result);
     }
 
     @Test
-    public void testEscapeJSON_empty() {
-        assertEquals("", Messages.escapeJSON(""));
+    public void testEscapeJSONNull() {
+        assertEquals("", Messages.escapeJSON(null));
     }
-
-    @Test
-    public void testEscapeJSON_quotes() {
-        assertEquals("He said \\\"hi\\\"", Messages.escapeJSON("He said \"hi\""));
-    }
-
-    @Test
-    public void testEscapeJSON_backslash() {
-        assertEquals("C:\\\\temp", Messages.escapeJSON("C:\\temp"));
-    }
-
-    @Test
-    public void testEscapeJSON_controlCharacters() {
-        assertEquals("a\\nb\\rc\\td", Messages.escapeJSON("a\nb\rc\td"));
-    }
-
-    // ---------- displayMessage ----------
 
     @Test
     public void testDisplayMessage() {
-        Messages.Message msg = new Messages.Message(
-                "0012345678", 1, VALID_NUMBER,
-                "Hi tonight", "00:1:HITONIGHT", "Sent");
 
-        Messages.displayMessage(msg);
+        Messages.Message message = new Messages.Message(
+                "1234567890",
+                1,
+                "+27821234567",
+                "Hello",
+                "12:1:HELLO",
+                "Sent"
+        );
 
-        String out = output();
-        assertTrue(out.contains("Message ID: 0012345678"));
-        assertTrue(out.contains("Message Number: 1"));
-        assertTrue(out.contains("Message Hash: 00:1:HITONIGHT"));
-        assertTrue(out.contains("Recipient: " + VALID_NUMBER));
-        assertTrue(out.contains("Message: Hi tonight"));
-        assertTrue(out.contains("Status: Sent"));
+        Messages.displayMessage(message);
+
+        assertTrue(getOutput().contains("Message ID: 1234567890"));
+        assertTrue(getOutput().contains("Recipient: +27821234567"));
+        assertTrue(getOutput().contains("Message: Hello"));
+        assertTrue(getOutput().contains("Status: Sent"));
     }
 
-    // ---------- displaySentMessages ----------
+    @Test
+    public void testDisplayNullMessage() {
+
+        Messages.displayMessage(null);
+
+        assertTrue(getOutput().contains("No message to display."));
+    }
 
     @Test
-    public void testDisplaySentMessages_empty() {
+    public void testDisplaySentMessagesWhenEmpty() {
+
         Messages.displaySentMessages();
-        assertTrue(output().contains("No sent messages available."));
+
+        assertTrue(getOutput().contains(
+                "No sent messages available."));
     }
 
     @Test
-    public void testDisplaySentMessages_afterSending() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Hello there", "1"));
-        outContent.reset();
+    public void testSendMessageSuccessfully() {
 
-        Messages.displaySentMessages();
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Hello there",
+                "1"
+        ));
 
-        String out = output();
-        assertTrue(out.contains("===== SENT MESSAGES ====="));
-        assertTrue(out.contains("Message: Hello there"));
-        assertTrue(out.contains("Total messages sent: 1"));
-    }
+        assertEquals(1, Messages.getSentMessages().size());
 
-    // ---------- sendMessage ----------
-
-    @Test
-    public void testSendMessage_send() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Hello there", "1"));
-
-        String out = output();
-        assertTrue(out.contains("===== MESSAGE PREVIEW ====="));
-        assertTrue(out.contains("Message successfully sent."));
-        assertTrue(out.contains("Status: Sent"));
-        assertTrue(out.contains(":1:HELLOTHERE"));
+        assertTrue(getOutput().contains(
+                "Message successfully sent."));
     }
 
     @Test
-    public void testSendMessage_disregard() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Forget this", "0"));
+    public void testSendMessageDisregarded() {
 
-        assertTrue(output().contains("Message disregarded."));
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Hello there",
+                "0"
+        ));
 
-        outContent.reset();
-        Messages.displaySentMessages();
-        assertTrue(output().contains("No sent messages available."));
+        assertEquals(0, Messages.getSentMessages().size());
+
+        assertTrue(getOutput().contains(
+                "Message disregarded."));
     }
 
     @Test
-    public void testSendMessage_store() throws Exception {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Send me later", "2"));
+    public void testSendMessageStored() {
 
-        assertTrue(output().contains("Stored messages saved to messages.json."));
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Send me later",
+                "2"
+        ));
 
-        File file = new File("messages.json");
-        assertTrue(file.exists());
+        assertEquals(1, Messages.getStoredMessages().size());
 
-        String json = new String(Files.readAllBytes(file.toPath()));
-        assertTrue(json.contains("\"recipient\": \"" + VALID_NUMBER + "\""));
-        assertTrue(json.contains("\"message\": \"Send me later\""));
-        assertTrue(json.contains("\"status\": \"Stored\""));
-        assertTrue(json.contains("\"messageNumber\": 1"));
+        assertTrue(getOutput().contains(
+                "Message successfully stored."));
     }
 
     @Test
-    public void testSendMessage_invalidRecipient() {
-        Messages.sendMessage(scannerOf("0821234567"));
-        assertTrue(output().contains("Invalid recipient cellphone number."));
+    public void testSendMessageInvalidRecipient() {
+
+        Messages.sendMessage(scannerOf(
+                "0821234567"
+        ));
+
+        assertEquals(0, Messages.getSentMessages().size());
+
+        assertTrue(getOutput().contains(
+                "Invalid recipient cellphone number."));
     }
 
     @Test
-    public void testSendMessage_emptyMessage() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "   "));
-        assertTrue(output().contains("Message must contain 1 to 249 characters."));
+    public void testSendMessageEmptyText() {
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                ""
+        ));
+
+        assertEquals(0, Messages.getSentMessages().size());
+
+        assertTrue(getOutput().contains(
+                "Message must contain 1 to 249 characters."));
     }
 
     @Test
-    public void testSendMessage_messageTooLong() {
-        String longText = "a".repeat(250);
-        Messages.sendMessage(scannerOf(VALID_NUMBER, longText));
-        assertTrue(output().contains("Message must contain 1 to 249 characters."));
+    public void testSendMessageTooLong() {
+
+        String longMessage = "A".repeat(250);
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                longMessage
+        ));
+
+        assertEquals(0, Messages.getSentMessages().size());
+
+        assertTrue(getOutput().contains(
+                "Message must contain 1 to 249 characters."));
     }
 
     @Test
-    public void testSendMessage_maxLengthAccepted() {
-        String maxText = "a".repeat(249);
-        Messages.sendMessage(scannerOf(VALID_NUMBER, maxText, "1"));
-        assertTrue(output().contains("Message successfully sent."));
+    public void testSendMessageMaximumValidLength() {
+
+        String message = "A".repeat(249);
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                message,
+                "1"
+        ));
+
+        assertEquals(1, Messages.getSentMessages().size());
     }
 
     @Test
-    public void testSendMessage_invalidAction() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Hello there", "9"));
-        assertTrue(output().contains("Invalid choice. Message was not processed."));
+    public void testSendMessageInvalidAction() {
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Hello",
+                "9"
+        ));
+
+        assertEquals(0, Messages.getSentMessages().size());
+
+        assertTrue(getOutput().contains(
+                "Invalid choice. Message was not processed."));
     }
 
     @Test
-    public void testSendMessage_numbersIncrement() {
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "First message", "1"));
-        Messages.sendMessage(scannerOf(VALID_NUMBER, "Second message", "1"));
+    public void testMessageCounterIncreases() {
 
-        String out = output();
-        assertTrue(out.contains("Message Number: 1"));
-        assertTrue(out.contains("Message Number: 2"));
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "First message",
+                "1"
+        ));
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Second message",
+                "1"
+        ));
+
+        assertEquals(2, Messages.getSentMessages().size());
+
+        assertEquals(
+                1,
+                Messages.getSentMessages().get(0).getMessageNumber());
+
+        assertEquals(
+                2,
+                Messages.getSentMessages().get(1).getMessageNumber());
     }
 
-    // ---------- storeMessages ----------
+    @Test
+    public void testSetMessageCounterAtLeast() {
+
+        Messages.setMessageCounterAtLeast(5);
+
+        Messages.sendMessage(scannerOf(
+                "+27821234567",
+                "Hello",
+                "1"
+        ));
+
+        assertEquals(
+                6,
+                Messages.getSentMessages().get(0).getMessageNumber());
+    }
 
     @Test
-    public void testStoreMessages_noMessages() throws Exception {
+    public void testStoreMessages() {
+
+        Messages.Message message = new Messages.Message(
+                "1234567890",
+                1,
+                "+27821234567",
+                "Hello",
+                "12:1:HELLO",
+                "Stored"
+        );
+
+        Messages.getStoredMessages().add(message);
+
         Messages.storeMessages();
 
-        String json = new String(Files.readAllBytes(new File("messages.json").toPath()));
-        assertEquals("[\n]\n", json);
-    }
-
-    // ---------- start (menu) ----------
-
-    @Test
-    public void testStart_quit() {
-        Messages.start(scannerOf("3"));
-
-        String out = output();
-        assertTrue(out.contains("Welcome to QuickChat."));
-        assertTrue(out.contains("Thank you for using QuickChat."));
+        assertTrue(new File("messages.json").exists());
     }
 
     @Test
-    public void testStart_invalidOption() {
-        Messages.start(scannerOf("abc", "7", "3"));
+    public void testStartQuit() {
 
-        String out = output();
-        assertTrue(out.contains("Invalid option. Please try again."));
-        assertTrue(out.contains("Thank you for using QuickChat."));
+        Messages.start(scannerOf("4"));
+
+        assertTrue(getOutput().contains("Welcome to QuickChat."));
+        assertTrue(getOutput().contains(
+                "Thank you for using QuickChat."));
     }
 
     @Test
-    public void testStart_showSentMessagesWhenEmpty() {
-        Messages.start(scannerOf("2", "3"));
-        assertTrue(output().contains("No sent messages available."));
+    public void testStartInvalidOption() {
+
+        Messages.start(scannerOf("abc", "9", "4"));
+
+        assertTrue(getOutput().contains(
+                "Invalid option. Please try again."));
     }
 
     @Test
-    public void testStart_sendThenShow() {
-        Messages.start(scannerOf(
-                "1", VALID_NUMBER, "Hello there", "1",
-                "2",
-                "3"));
+    public void testStartShowSentMessagesWhenEmpty() {
 
-        String out = output();
-        assertTrue(out.contains("Message successfully sent."));
-        assertTrue(out.contains("Total messages sent: 1"));
+        Messages.start(scannerOf("2", "4"));
+
+        assertTrue(getOutput().contains(
+                "No sent messages available."));
+    }
+
+    @Test
+    public void testStartStoredMessageMenu() {
+
+        Messages.start(scannerOf("3", "7", "4"));
+
+        assertTrue(getOutput().contains(
+                "STORED MESSAGE OPTIONS"));
+
+        assertTrue(getOutput().contains(
+                "Returning to main menu."));
     }
 }

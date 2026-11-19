@@ -1,9 +1,8 @@
 
 package ayandaprog;
 
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.ArrayList;
+import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.Scanner;
 
@@ -11,42 +10,57 @@ public class Messages {
 
     private static final Random random = new Random();
 
-    private static final ArrayList<Message> sentMessages =
-            new ArrayList<>();
-
-    private static final ArrayList<Message> disregardedMessages =
-            new ArrayList<>();
-
-    private static final ArrayList<Message> storedMessages =
-            new ArrayList<>();
+    private static final ArrayList<Message> sentMessages = new ArrayList<>();
+    private static final ArrayList<Message> disregardedMessages = new ArrayList<>();
+    private static final ArrayList<Message> storedMessages = new ArrayList<>();
 
     private static int messageCounter = 0;
 
-    // Open the Messages menu after login
+    public static ArrayList<Message> getSentMessages() {
+        return sentMessages;
+    }
+
+    public static ArrayList<Message> getStoredMessages() {
+        return storedMessages;
+    }
+
+    public static void setMessageCounterAtLeast(int number) {
+        if (number > messageCounter) {
+            messageCounter = number;
+        }
+    }
+
     public static void start(Scanner input) {
+        StoredMessages.loadFromJSON();
 
         int option = 0;
 
         System.out.println("\nWelcome to QuickChat.");
 
-        while (option != 3) {
-
+        while (option != 4) {
             System.out.println("\n===== QUICKCHAT MENU =====");
             System.out.println("1. Send Messages");
             System.out.println("2. Show recently sent messages");
-            System.out.println("3. Quit");
+            System.out.println("3. Stored message options");
+            System.out.println("4. Quit");
             System.out.print("Enter your option: ");
 
-            String choice = input.nextLine();
+            String choice;
 
             try {
-                option = Integer.parseInt(choice);
+                choice = input.nextLine();
+            } catch (NoSuchElementException e) {
+                System.out.println("No input available. Exiting.");
+                return;
+            }
+
+            try {
+                option = Integer.parseInt(choice.trim());
             } catch (NumberFormatException e) {
                 option = 0;
             }
 
             switch (option) {
-
                 case 1:
                     sendMessage(input);
                     break;
@@ -56,29 +70,27 @@ public class Messages {
                     break;
 
                 case 3:
-                    System.out.println(
-                            "Thank you for using QuickChat.");
+                    StoredMessages.displayStoredMessagesMenu(input);
+                    break;
+
+                case 4:
+                    System.out.println("Thank you for using QuickChat.");
                     break;
 
                 default:
-                    System.out.println(
-                            "Invalid option. Please try again.");
+                    System.out.println("Invalid option. Please try again.");
+                    break;
             }
         }
     }
 
-    // Send, disregard or store a message
     public static void sendMessage(Scanner input) {
 
-        System.out.print(
-                "\nEnter recipient cellphone number "
-                + "(e.g. +27821234567): ");
-
+        System.out.print("\nEnter recipient cellphone number (e.g. +27821234567): ");
         String recipient = input.nextLine().trim();
 
         if (!isValidRecipient(recipient)) {
-            System.out.println(
-                    "Invalid recipient cellphone number.");
+            System.out.println("Invalid recipient cellphone number.");
             return;
         }
 
@@ -86,19 +98,23 @@ public class Messages {
         String text = input.nextLine();
 
         if (text.trim().isEmpty() || text.length() >= 250) {
-            System.out.println(
-                    "Message must contain 1 to 249 characters.");
+            System.out.println("Message must contain 1 to 249 characters.");
             return;
         }
 
         int nextNumber = messageCounter + 1;
-        String id = generateMessageID();
 
-        String hash = generateMessageHash(
-                id, nextNumber, text);
+        String id = generateMessageID();
+        String hash = generateMessageHash(id, nextNumber, text);
 
         Message newMessage = new Message(
-                id, nextNumber, recipient, text, hash, "Pending");
+                id,
+                nextNumber,
+                recipient,
+                text,
+                hash,
+                "Pending"
+        );
 
         System.out.println("\n===== MESSAGE PREVIEW =====");
         displayMessage(newMessage);
@@ -132,27 +148,24 @@ public class Messages {
 
             case "2":
                 newMessage.messageStatus = "Stored";
-                storedMessages.add(newMessage);
                 messageCounter = nextNumber;
 
-                storeMessages();
+                StoredMessages.addStoredMessage(newMessage);
                 break;
 
             default:
-                System.out.println(
-                        "Invalid choice. Message was not processed.");
+                System.out.println("Invalid choice. Message was not processed.");
+                break;
         }
     }
 
-    // Generate a random 10-digit message ID
     public static String generateMessageID() {
 
         String id;
 
         do {
             long number = 1_000_000_000L
-                    + (long) (random.nextDouble()
-                    * 9_000_000_000L);
+                    + (long) (random.nextDouble() * 9_000_000_000L);
 
             id = String.valueOf(number);
 
@@ -184,14 +197,13 @@ public class Messages {
         return false;
     }
 
-    // Validate an international cellphone number
     public static boolean isValidRecipient(String recipient) {
-        return recipient.matches("\\+[1-9][0-9]{7,14}");
+
+        return recipient != null
+                && recipient.matches("\\+[1-9][0-9]{7,14}");
     }
 
-    // Generate the message hash
-    public static String generateMessageHash(
-            String id, int number, String text) {
+    public static String generateMessageHash(String id, int number, String text) {
 
         String[] words = text.trim().split("\\s+");
 
@@ -200,11 +212,16 @@ public class Messages {
 
         return (id.substring(0, 2) + ":"
                 + number + ":"
-                + firstWord + lastWord).toUpperCase();
+                + firstWord
+                + lastWord).toUpperCase();
     }
 
-    // Display a message
     public static void displayMessage(Message msg) {
+
+        if (msg == null) {
+            System.out.println("No message to display.");
+            return;
+        }
 
         System.out.println("Message ID: " + msg.messageID);
         System.out.println("Message Number: " + msg.messageNumber);
@@ -214,7 +231,6 @@ public class Messages {
         System.out.println("Status: " + msg.messageStatus);
     }
 
-    // Display recently sent messages
     public static void displaySentMessages() {
 
         if (sentMessages.isEmpty()) {
@@ -229,56 +245,18 @@ public class Messages {
             System.out.println("-------------------------");
         }
 
-        System.out.println(
-                "Total messages sent: " + sentMessages.size());
+        System.out.println("Total messages sent: " + sentMessages.size());
     }
 
-    // Save stored messages to a JSON file
     public static void storeMessages() {
-
-        try (FileWriter writer = new FileWriter("messages.json")) {
-
-            writer.write("[\n");
-
-            for (int i = 0; i < storedMessages.size(); i++) {
-
-                Message msg = storedMessages.get(i);
-
-                writer.write("  {\n");
-                writer.write("    \"messageID\": \""
-                        + escapeJSON(msg.messageID) + "\",\n");
-                writer.write("    \"messageNumber\": "
-                        + msg.messageNumber + ",\n");
-                writer.write("    \"messageHash\": \""
-                        + escapeJSON(msg.messageHash) + "\",\n");
-                writer.write("    \"recipient\": \""
-                        + escapeJSON(msg.recipient) + "\",\n");
-                writer.write("    \"message\": \""
-                        + escapeJSON(msg.message) + "\",\n");
-                writer.write("    \"status\": \""
-                        + escapeJSON(msg.messageStatus) + "\"\n");
-                writer.write("  }");
-
-                if (i < storedMessages.size() - 1) {
-                    writer.write(",");
-                }
-
-                writer.write("\n");
-            }
-
-            writer.write("]\n");
-
-            System.out.println(
-                    "Stored messages saved to messages.json.");
-
-        } catch (IOException e) {
-            System.out.println(
-                    "Error saving messages: " + e.getMessage());
-        }
+        StoredMessages.saveToJSON();
     }
 
-    // Escape special characters for JSON
     public static String escapeJSON(String value) {
+
+        if (value == null) {
+            return "";
+        }
 
         return value.replace("\\", "\\\\")
                 .replace("\"", "\\\"")
@@ -287,8 +265,7 @@ public class Messages {
                 .replace("\t", "\\t");
     }
 
-    // Message class
-    static class Message {
+    public static class Message {
 
         private String messageID;
         private int messageNumber;
@@ -297,9 +274,12 @@ public class Messages {
         private String messageHash;
         private String messageStatus;
 
-        public Message(String messageID, int messageNumber,
-                       String recipient, String message,
-                       String messageHash, String messageStatus) {
+        public Message(String messageID,
+                       int messageNumber,
+                       String recipient,
+                       String message,
+                       String messageHash,
+                       String messageStatus) {
 
             this.messageID = messageID;
             this.messageNumber = messageNumber;
@@ -307,6 +287,30 @@ public class Messages {
             this.message = message;
             this.messageHash = messageHash;
             this.messageStatus = messageStatus;
+        }
+
+        public String getMessageID() {
+            return messageID;
+        }
+
+        public int getMessageNumber() {
+            return messageNumber;
+        }
+
+        public String getRecipient() {
+            return recipient;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public String getMessageHash() {
+            return messageHash;
+        }
+
+        public String getMessageStatus() {
+            return messageStatus;
         }
     }
 }
